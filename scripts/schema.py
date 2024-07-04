@@ -19,6 +19,13 @@ gpu_schema = {
     "n_gpu": merge(tinteger, required)  # which gpu device to use
 }
 
+ssm_schema = {
+    "enable": merge(tboolean, default(False)),
+    "d_state": merge(tinteger, default(16)),
+    "d_conv": merge(tinteger, default(4)),
+    "expand": merge(tinteger, default(1)),
+}
+
 model_schema = {
     "family": merge(tstring, allowed(["gpt2", "gpt2_loop", "gpt2_tying"])),
     "n_positions": merge(tinteger, required),  # maximum context length
@@ -30,6 +37,7 @@ model_schema = {
     "pretrained_path": merge(tstring, nullable, default(None)),
     "loop_func": merge(tstring, default("z=f(x+z)"), allowed(
         ["z=f(x+z)", "z=f(x*z)"])),
+    "ssm": stdict(ssm_schema),
 }
 
 curriculum_base_schema = {

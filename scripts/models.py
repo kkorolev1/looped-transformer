@@ -13,6 +13,7 @@ def build_model(conf):
             n_layer=conf.n_layer,
             n_head=conf.n_head,
             pred_type=conf.pred_type,
+            ssm_config=conf.ssm,
         )
     elif conf.family == 'gpt2_loop':
         model = TransformerModelLooped(
@@ -23,6 +24,7 @@ def build_model(conf):
             n_head=conf.n_head,
             loop_func=conf.loop_func,
             pred_type=conf.pred_type,
+            ssm_config=conf.ssm,
         )
     elif conf.family == 'gpt2_tying':
         model = TransformerModelTying(
@@ -31,6 +33,7 @@ def build_model(conf):
             n_embd=conf.n_embd,
             n_layer=conf.n_layer,
             n_head=conf.n_head,
+            ssm_config=conf.ssm,
         )
     else:
         raise NotImplementedError
@@ -39,7 +42,7 @@ def build_model(conf):
 
 
 class TransformerModel(nn.Module):
-    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, pred_type='regression'):
+    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, pred_type='regression', ssm_config=None):
 
         super(TransformerModel, self).__init__()
         self.freq = 2
@@ -52,6 +55,11 @@ class TransformerModel(nn.Module):
         configuration.dropout = 0.0
         configuration.bias = True
         configuration.dropout = 0.
+        if ssm_config is not None:
+            configuration.ssm_enable = ssm_config.enable
+            configuration.ssm_d_state = ssm_config.d_state
+            configuration.ssm_d_conv = ssm_config.d_conv
+            configuration.ssm_expand = ssm_config.expand
         self.configuration = configuration
 
         self.n_positions = n_positions  # n = points in this setting
@@ -77,7 +85,7 @@ class TransformerModel(nn.Module):
         """
         B, n, d = xs_b.shape
         device = xs_b.device
-
+        
         ys_b_wide = torch.cat(
             (
                 ys_b.view(B, n, 1),
@@ -116,10 +124,10 @@ class TransformerModel(nn.Module):
 
 
 class TransformerModelTying(TransformerModel):
-    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4):
+    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, ssm_config=None):
 
         super(TransformerModelTying, self).__init__(
-            n_dims, n_positions, n_embd, n_layer, n_head)
+            n_dims, n_positions, n_embd, n_layer, n_head, ssm_config=ssm_config)
 
         self.configuration.n_layer = 1
 
@@ -153,10 +161,10 @@ class TransformerModelTying(TransformerModel):
 
 class TransformerModelLooped(TransformerModel):
     def __init__(
-            self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, loop_func='z=f(x+z)', pred_type='regression'):
+            self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, loop_func='z=f(x+z)', pred_type='regression', ssm_config=None):
 
         super(TransformerModelLooped, self).__init__(
-            n_dims, n_positions, n_embd, n_layer, n_head, pred_type)
+            n_dims, n_positions, n_embd, n_layer, n_head, pred_type, ssm_config)
         self.loop_func = loop_func
 
     def f(self, output, embeds):
@@ -168,7 +176,7 @@ class TransformerModelLooped(TransformerModel):
             raise NotImplementedError
         return f_output
 
-    def forward(self, xs, ys, n_loop_start, n_loops):
+    def forward(self, xs, ys, n_loop_start, n_loops, use_n_last=-1):
         """
         :param xs: [B, n, d]
         :param ys: [B, n]
@@ -186,8 +194,16 @@ class TransformerModelLooped(TransformerModel):
         else:
             raise NotImplementedError("Currently we only support loop function z=f(x+z) or z=f(x*z).")
 
+        if use_n_last == -1:
+            n_last_mask = torch.zeros_like(output).bool()
+        else:
+            assert use_n_last <= n, f"Cannot use more last tokens than the sequence contains, {use_n_last} > {n}"
+            n_last_mask = torch.arange(2 * n, device=xs.device) < 2 * (n - use_n_last)
+            n_last_mask = n_last_mask.view(1, -1, 1).repeat(B, 1, output.shape[-1])
+        
         pred_list = []
         for idx in range(n_loops):
+            output = output.masked_fill(n_last_mask, 0)
             if idx < n_loop_start:  # this will save memory when n_loops large.
                 with torch.no_grad():
                     output = self.f(output, embeds)

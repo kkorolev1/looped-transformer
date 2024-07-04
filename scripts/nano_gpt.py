@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from mamba_ssm import Mamba
 
 
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
@@ -112,7 +113,10 @@ class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
-        self.attn = CausalSelfAttention(config)
+        if config.ssm_enable:
+            self.attn = Mamba(d_model=config.n_embd, d_state=config.ssm_d_state, d_conv=config.ssm_d_conv, expand=config.ssm_expand)
+        else:
+            self.attn = CausalSelfAttention(config)
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
@@ -131,6 +135,10 @@ class GPT2Config:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True  # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    ssm_enable: bool = False
+    ssm_d_state: int = 16
+    ssm_d_conv: int = 4
+    ssm_expand: int = 1
 
 
 class GPT2Model(nn.Module):
