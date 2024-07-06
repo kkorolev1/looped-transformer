@@ -37,7 +37,7 @@ model_schema = {
     "pretrained_path": merge(tstring, nullable, default(None)),
     "loop_func": merge(tstring, default("z=f(x+z)"), allowed(
         ["z=f(x+z)", "z=f(x*z)"])),
-    "ssm": stdict(ssm_schema),
+    "ssm": stdict(ssm_schema)
 }
 
 curriculum_base_schema = {

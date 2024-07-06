@@ -161,15 +161,22 @@ class TransformerModelTying(TransformerModel):
 
 class TransformerModelLooped(TransformerModel):
     def __init__(
-            self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, loop_func='z=f(x+z)', pred_type='regression', ssm_config=None):
+            self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, loop_func='z=f(x+z)', pred_type='regression', ssm_config=None, use_ctx_mult=False):
 
         super(TransformerModelLooped, self).__init__(
             n_dims, n_positions, n_embd, n_layer, n_head, pred_type, ssm_config)
         self.loop_func = loop_func
+        self.use_ctx_mult = use_ctx_mult
+        if use_ctx_mult:
+            self.ctx_mult = nn.Parameter(torch.rand(()))
 
     def f(self, output, embeds):
         if self.loop_func == 'z=f(x+z)':
-            f_output = self._backbone(inputs_embeds=output + embeds)  # [B, 2n + 1, d]
+            if self.use_ctx_mult:
+                input_embeds = self.ctx_mult * output + (1 - self.ctx_mult) * embeds
+            else:
+                input_embeds = output + embeds
+            f_output = self._backbone(inputs_embeds=input_embeds)  # [B, 2n + 1, d]
         elif self.loop_func == 'z=f(x*z)':
             f_output = self._backbone(inputs_embeds=output * embeds)  # [B, 2n + 1, d]
         else:

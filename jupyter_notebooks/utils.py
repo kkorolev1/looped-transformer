@@ -64,7 +64,7 @@ def eval_unlooped_model(model, xs, ys, add_inputs_embeds=False):
     return err, y_pred_total
 
 
-def eval_looped_model(model, xs, ys, loop_max):
+def eval_looped_model(model, xs, ys, loop_max, use_n_last=-1):
     """
 
     :param model:
@@ -75,6 +75,7 @@ def eval_looped_model(model, xs, ys, loop_max):
         err: [N, n]
         loop_err: [N, loop_max]
     """
+    print(use_n_last)
     sample_size = xs.shape[0]
     n_points = xs.shape[1]
     batch_size = 128
@@ -85,7 +86,7 @@ def eval_looped_model(model, xs, ys, loop_max):
         for batch_idx in range(sample_size // batch_size):
             xs_train = xs[batch_idx * batch_size: (batch_idx + 1) * batch_size]
             ys_train = ys[batch_idx * batch_size: (batch_idx + 1) * batch_size]
-            y_pred_list = model(xs_train, ys_train, 0, loop_max)  # list of [B, n], length T
+            y_pred_list = model(xs_train, ys_train, 0, loop_max, use_n_last)  # list of [B, n], length T
             y_pred_total[batch_idx * batch_size: (batch_idx + 1) * batch_size] = y_pred_list[-1].detach()
             tmp_list = [y_pred[:, [-1]] for y_pred in y_pred_list]  # list of [B, 1], length T
             tmp_arry = torch.cat(tmp_list, dim=1)  # [B, T]
